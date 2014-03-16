@@ -7,12 +7,13 @@ import (
 )
 
 type Node struct {
+	Loop       *SelectLoop
+	Deliveries []*Delivery
+
+	onCloseFuncs []func()
 	CloseChan    chan bool
 	IsClosed     bool
 	closeOnce    sync.Once
-	Loop         *SelectLoop
-	Deliveries   []*Delivery
-	onCloseFuncs []func()
 }
 
 func NewNode() *Node {
@@ -63,7 +64,7 @@ func (self *Node) OnClose(f func()) {
 func (self *Node) Close() {
 	self.closeOnce.Do(func() {
 		close(self.CloseChan)
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 50)
 		for _, delivery := range self.Deliveries {
 			select {
 			case <-delivery.CloseChan:
