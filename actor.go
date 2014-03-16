@@ -2,6 +2,35 @@ package main
 
 import "reflect"
 
+type Actor struct {
+	*Closer
+	Loop *SelectLoop
+}
+
+func NewActor() *Actor {
+	actor := &Actor{
+		Closer: new(Closer),
+	}
+	// select loop
+	selectLoop := new(SelectLoop)
+	closeChan := make(chan bool)
+	selectLoop.Recv(closeChan, func(v reflect.Value, ok bool) {})
+	actor.OnClose(func() {
+		close(closeChan)
+	})
+	go func() {
+		for {
+			selectLoop.Select()
+			if actor.IsClosed {
+				break
+			}
+		}
+	}()
+	actor.Loop = selectLoop
+
+	return actor
+}
+
 type callbackFunc func(reflect.Value, bool)
 
 type SelectLoop struct {

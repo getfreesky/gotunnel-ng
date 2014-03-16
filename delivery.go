@@ -5,15 +5,13 @@ import (
 	"io"
 	"math/rand"
 	"net"
-	"sync"
 )
 
 type Delivery struct {
+	*Closer
 	conn           net.Conn
 	Source         int64
 	IncomingPacket chan []byte
-	CloseChan      chan bool
-	closeOnce      sync.Once
 }
 
 func NewDelivery(conn net.Conn, isIncoming bool) (*Delivery, error) {
@@ -33,11 +31,14 @@ func NewDelivery(conn net.Conn, isIncoming bool) (*Delivery, error) {
 		}
 	}
 	delivery := &Delivery{
+		Closer:         new(Closer),
 		conn:           conn,
 		IncomingPacket: make(chan []byte),
-		CloseChan:      make(chan bool),
 		Source:         source,
 	}
+	delivery.OnClose(func() {
+		delivery.conn.Close()
+	})
 	go delivery.Run()
 	return delivery, nil
 }
@@ -59,11 +60,4 @@ func (self *Delivery) Run() {
 		}
 		self.IncomingPacket <- data
 	}
-}
-
-func (self *Delivery) Close() {
-	self.closeOnce.Do(func() {
-		self.conn.Close()
-		close(self.CloseChan)
-	})
 }
