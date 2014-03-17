@@ -22,14 +22,15 @@ type Session struct {
 	*Logger
 	Id             int64
 	DeliverySource int64
-	Conn           net.Conn
-	connReady      chan bool
 	HostPort       string
 	OutgoingPacket chan SessionPacketInfo
-	localClosed    bool
-	remoteClosed   bool
-	connClosed     bool
-	closeConnOnce  sync.Once
+	// conn
+	Conn          net.Conn
+	connReady     chan bool
+	localClosed   bool
+	remoteClosed  bool
+	connClosed    bool
+	closeConnOnce sync.Once
 }
 
 type SessionPacketInfo struct {
@@ -46,7 +47,7 @@ func NewSession(id, source int64, conn net.Conn, hostPort string) *Session {
 		Conn:           conn,
 		connReady:      make(chan bool),
 		HostPort:       hostPort,
-		OutgoingPacket: make(chan SessionPacketInfo, 1024),
+		OutgoingPacket: make(chan SessionPacketInfo),
 	}
 	if id < 0 { // local session
 		session.Id = rand.Int63()
@@ -63,7 +64,6 @@ func (self *Session) startConnReader() {
 		n, err := self.Conn.Read(buf)
 		if n > 0 {
 			self.SendData(buf[:n])
-			self.Log("%d bytes from connection", n)
 		}
 		if err != nil {
 			if self.connClosed {
@@ -139,7 +139,6 @@ func (self *Session) handleConnect(reader io.Reader) {
 		log.Fatal(err)
 	}
 	hostPort := string(hostPortBs)
-	self.Log("connect %s", hostPort)
 	self.HostPort = hostPort
 	conn, err := net.Dial("tcp", hostPort)
 	if err != nil {
@@ -160,10 +159,8 @@ func (self *Session) handleData(reader io.Reader) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	self.Log("%d bytes from delivery", len(data))
 	<-self.connReady
 	self.Conn.Write(data)
-	self.Log("%d bytes wrote to conn", len(data))
 }
 
 func (self *Session) handleClose() {

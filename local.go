@@ -31,7 +31,6 @@ func NewLocal(listenAddr, serverAddr string) (*Local, error) {
 	}
 	local.Recv(socksServer.NewClient, func(v reflect.Value) { // new socks client
 		info := v.Interface().(SocksClientInfo)
-		local.Log("new socks client %v %s", info.Conn, info.HostPort)
 		session := NewSession(-1, delivery.Source, info.Conn, info.HostPort)
 		local.AddSession(session)
 	})

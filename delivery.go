@@ -33,7 +33,7 @@ func NewDelivery(conn net.Conn, isIncoming bool) (*Delivery, error) {
 	delivery := &Delivery{
 		Closer:         new(Closer),
 		conn:           conn,
-		IncomingPacket: make(chan []byte, 1024),
+		IncomingPacket: make(chan []byte),
 		Source:         source,
 	}
 	delivery.OnClose(func() {

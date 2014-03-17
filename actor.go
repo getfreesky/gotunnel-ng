@@ -21,8 +21,8 @@ type recvInfo struct {
 func NewActor() *Actor {
 	actor := &Actor{
 		Closer:       new(Closer),
-		recvChan:     make(chan *recvInfo, 16),
-		stopRecvChan: make(chan *recvInfo, 16),
+		recvChan:     make(chan *recvInfo, 128), //TODO make it unbuffered
+		stopRecvChan: make(chan *recvInfo, 128),
 		continueLoop: make(chan bool),
 	}
 	// recv
