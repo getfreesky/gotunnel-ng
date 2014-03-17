@@ -23,10 +23,10 @@ func NewNode() *Node {
 }
 
 func (self *Node) AddDelivery(delivery *Delivery) {
-	self.Loop.Recv(delivery.IncomingPacket, func(v reflect.Value, ok bool) { // incoming packet TODO
+	self.Recv(delivery.IncomingPacket, func(v reflect.Value, ok bool) { // incoming packet TODO
 	})
 	delivery.OnClose(func() {
-		self.Loop.StopRecv(delivery.IncomingPacket)
+		self.StopRecv(delivery.IncomingPacket)
 		var n int
 		for i, d := range self.Deliveries {
 			if d == delivery {
