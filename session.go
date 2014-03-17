@@ -143,7 +143,12 @@ func (self *Session) handleConnect(reader io.Reader) {
 	self.HostPort = hostPort
 	conn, err := net.Dial("tcp", hostPort)
 	if err != nil {
-		self.Close() //TODO inform remote
+		self.SignalClose()
+		self.localClosed = true
+		if self.remoteClosed {
+			self.Close()
+		}
+		return
 	}
 	self.Conn = conn
 	close(self.connReady)
