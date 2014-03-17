@@ -1,71 +1,101 @@
 package main
 
-import (
-	"reflect"
-	"sync"
-)
+import "reflect"
 
 type Actor struct {
 	*Closer
 	cases        []reflect.SelectCase
 	callbacks    []callbackFunc
+	recvChan     chan *recvInfo
+	stopRecvChan chan *recvInfo
 	continueLoop chan bool
-	lock         sync.Mutex
+}
+
+type callbackFunc func(reflect.Value)
+
+type recvInfo struct {
+	c interface{}
+	f callbackFunc
 }
 
 func NewActor() *Actor {
 	actor := &Actor{
 		Closer:       new(Closer),
+		recvChan:     make(chan *recvInfo, 16),
+		stopRecvChan: make(chan *recvInfo, 16),
 		continueLoop: make(chan bool),
 	}
-	// select loop
-	breakLoop := make(chan bool)
-	actor.Recv(breakLoop, func(v reflect.Value, ok bool) {})
-	actor.OnClose(func() {
-		close(breakLoop)
+	// recv
+	actor.cases = append(actor.cases, reflect.SelectCase{
+		Dir:  reflect.SelectRecv,
+		Chan: reflect.ValueOf(actor.recvChan),
 	})
-	actor.Recv(actor.continueLoop, func(v reflect.Value, ok bool) {})
+	actor.callbacks = append(actor.callbacks, actor.recv)
+	// stop recv
+	actor.cases = append(actor.cases, reflect.SelectCase{
+		Dir:  reflect.SelectRecv,
+		Chan: reflect.ValueOf(actor.stopRecvChan),
+	})
+	actor.callbacks = append(actor.callbacks, actor.stopRecv)
+	// loop
 	go func() {
 		for {
 			n, v, ok := reflect.Select(actor.cases)
-			actor.callbacks[n](v, ok)
+			if ok {
+				actor.callbacks[n](v)
+			}
 			if actor.IsClosed {
 				break
 			}
 		}
 	}()
-
+	// break
+	breakLoop := make(chan bool)
+	actor.Recv(breakLoop, func(v reflect.Value) {})
+	actor.OnClose(func() {
+		close(breakLoop)
+	})
+	// continue
+	actor.Recv(actor.continueLoop, func(v reflect.Value) {})
 	return actor
 }
 
-type callbackFunc func(reflect.Value, bool)
-
-func (self *Actor) Recv(c interface{}, f callbackFunc) {
-	self.lock.Lock()
-	defer self.lock.Unlock()
+func (self *Actor) recv(v reflect.Value) {
+	info := v.Interface().(*recvInfo)
 	self.cases = append(self.cases, reflect.SelectCase{
 		Dir:  reflect.SelectRecv,
-		Chan: reflect.ValueOf(c),
+		Chan: reflect.ValueOf(info.c),
 	})
-	self.callbacks = append(self.callbacks, f)
+	self.callbacks = append(self.callbacks, info.f)
+}
+
+func (self *Actor) Recv(c interface{}, f callbackFunc) {
+	self.recvChan <- &recvInfo{
+		c: c, f: f,
+	}
 	select {
 	case self.continueLoop <- true:
 	default:
 	}
 }
 
-func (self *Actor) StopRecv(c interface{}) {
-	self.lock.Lock()
-	defer self.lock.Unlock()
+func (self *Actor) stopRecv(v reflect.Value) {
+	info := v.Interface().(*recvInfo)
 	var n int
 	for i, c := range self.cases {
-		if reflect.DeepEqual(c.Chan.Interface(), c) {
+		if reflect.DeepEqual(c.Chan.Interface(), info.c) {
 			n = i
 			break
 		}
 	}
 	self.cases = append(self.cases[:n], self.cases[n+1:]...)
 	self.callbacks = append(self.callbacks[:n], self.callbacks[n+1:]...)
+}
+
+func (self *Actor) StopRecv(c interface{}) {
+	self.stopRecvChan <- &recvInfo{
+		c: c,
+	}
 	select {
 	case self.continueLoop <- true:
 	default:

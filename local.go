@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net"
 	"reflect"
 )
@@ -14,6 +13,7 @@ func NewLocal(listenAddr, serverAddr string) (*Local, error) {
 	local := &Local{
 		Node: NewNode(),
 	}
+	local.LogPrefix = "."
 	// connect to server
 	conn, err := net.Dial("tcp", serverAddr)
 	if err != nil {
@@ -29,9 +29,11 @@ func NewLocal(listenAddr, serverAddr string) (*Local, error) {
 	if err != nil {
 		return nil, err
 	}
-	local.Recv(socksServer.NewClient, func(v reflect.Value, ok bool) { // new socks client
+	local.Recv(socksServer.NewClient, func(v reflect.Value) { // new socks client
 		info := v.Interface().(SocksClientInfo)
-		fmt.Printf("new socks client %v %s\n", info.Conn, info.HostPort)
+		local.Log("new socks client %v %s", info.Conn, info.HostPort)
+		session := NewSession(-1, delivery.Source, info.Conn, info.HostPort)
+		local.AddSession(session)
 	})
 	return local, nil
 }

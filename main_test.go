@@ -39,4 +39,5 @@ func TestSocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = local
+	<-(make(chan bool))
 }

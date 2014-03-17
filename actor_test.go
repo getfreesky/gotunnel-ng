@@ -16,8 +16,8 @@ func TestActor(t *testing.T) {
 	c := make(chan bool)
 	var success bool
 	done := make(chan bool)
-	s.Recv(make(chan bool), func(v reflect.Value, ok bool) {})
-	s.Recv(c, func(v reflect.Value, ok bool) {
+	s.Recv(make(chan bool), func(v reflect.Value) {})
+	s.Recv(c, func(v reflect.Value) {
 		success = true
 		close(done)
 	})

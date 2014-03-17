@@ -16,6 +16,7 @@ func NewServer(addr string) (*Server, error) {
 	server := &Server{
 		Node: NewNode(),
 	}
+	server.LogPrefix = "="
 	// delivery
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
