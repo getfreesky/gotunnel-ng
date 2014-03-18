@@ -24,11 +24,11 @@ func NewActor() *Actor {
 		Closer:         new(Closer),
 		recvChan:       make(chan *recvInfo, 128), //TODO make it unbuffered
 		stopRecvChan:   make(chan *recvInfo, 128),
-		signalChan:     make(chan string),
+		signalChan:     make(chan string, 1024),
 		signalHandlers: make(map[string]func()),
 	}
 	actor.OnClose(func() {
-		actor.Signal("__break")
+		actor.Signal("__next")
 	})
 	actor.cases = []reflect.SelectCase{
 		{ // recv
@@ -93,14 +93,14 @@ func (self *Actor) Recv(c interface{}, f callbackFunc) {
 	self.recvChan <- &recvInfo{
 		c: c, f: f,
 	}
-	self.Signal("__continue")
+	self.Signal("__next")
 }
 
 func (self *Actor) StopRecv(c interface{}) {
 	self.stopRecvChan <- &recvInfo{
 		c: c,
 	}
-	self.Signal("__continue")
+	self.Signal("__next")
 }
 
 func (self *Actor) OnSignal(signal string, f func()) {
