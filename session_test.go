@@ -61,6 +61,10 @@ func TestSession(t *testing.T) {
 					var length uint16
 					err = binary.Read(conn, binary.BigEndian, &length)
 					if err != nil {
+						if err == io.EOF {
+							conn.Close()
+							break
+						}
 						t.Fatal(err)
 					}
 					data := make([]byte, length)

@@ -40,6 +40,9 @@ func main() {
 			log.Fatal(err)
 		}
 		localSessionManager.Sessions[session.id] = session
+		session.OnClose(func() {
+			delete(localSessionManager.Sessions, session.id)
+		})
 	})
 	<-(make(chan bool))
 }

@@ -5,36 +5,37 @@ import (
 	"encoding/binary"
 	"math/rand"
 	"net"
-	"reflect"
 	"time"
 )
 
 const (
 	CONNECT = uint8(0)
 	DATA    = uint8(1)
+	CLOSE   = uint8(2)
 )
 
 type Session struct {
 	*Actor
-	id             int64
-	delivery       *Delivery
-	hostPort       string
-	conn           net.Conn
-	connReady      chan bool
-	connWriteQueue chan []byte
+	id           int64
+	delivery     *Delivery
+	hostPort     string
+	conn         net.Conn
+	connReady    chan bool
+	localClosed  bool
+	remoteClosed bool
 }
 
 func NewOutgoingSession(delivery *Delivery, hostPort string, conn net.Conn) (*Session, error) {
 	session := &Session{
-		Actor:          NewActor(),
-		id:             rand.Int63(),
-		delivery:       delivery,
-		hostPort:       hostPort,
-		conn:           conn,
-		connReady:      make(chan bool),
-		connWriteQueue: make(chan []byte),
+		Actor:     NewActor(),
+		id:        rand.Int63(),
+		delivery:  delivery,
+		hostPort:  hostPort,
+		conn:      conn,
+		connReady: make(chan bool),
 	}
-	session.Recv(session.connWriteQueue, session.writeConn)
+	session.OnSignal("data", session.onData)
+	session.OnSignal("close", session.onClose)
 	session.SendConnect()
 	go session.startConnReader()
 	close(session.connReady)
@@ -48,13 +49,13 @@ func NewIncomingSession(id int64, delivery *Delivery, hostPort string) (*Session
 		delivery:  delivery,
 		hostPort:  hostPort,
 		connReady: make(chan bool),
-		connWriteQueue: make(chan []byte),
 	}
-	session.Recv(session.connWriteQueue, session.writeConn)
+	session.OnSignal("data", session.onData)
+	session.OnSignal("close", session.onClose)
 	go func() {
 		conn, err := net.DialTimeout("tcp", hostPort, time.Second*5)
 		if err != nil {
-			session.Signal("dialError")
+			session.Signal("dialError") //TODO
 			close(session.connReady)
 			return
 		}
@@ -73,7 +74,11 @@ func (self *Session) startConnReader() {
 			self.SendData(buf[:n])
 		}
 		if err != nil {
-			self.Signal("connClosed")
+			self.SendClose()
+			self.localClosed = true
+			if self.remoteClosed {
+				self.Close()
+			}
 			break
 		}
 	}
@@ -98,15 +103,25 @@ func (self *Session) SendData(data []byte) {
 	self.delivery.Send(buf.Bytes())
 }
 
-func (self *Session) HandleData(data []byte) {
-	self.connWriteQueue <- data
+func (self *Session) SendClose() {
+	buf := self.newPacket(CLOSE)
+	self.delivery.Send(buf.Bytes())
 }
 
-func (self *Session) writeConn(v reflect.Value) {
+func (self *Session) onData(data []byte) {
 	<-self.connReady
 	if self.conn == nil {
 		return
 	}
-	data := v.Interface().([]byte)
 	self.conn.Write(data)
+}
+
+func (self *Session) onClose() {
+	if self.conn != nil {
+		self.conn.Close()
+	}
+	self.remoteClosed = true
+	if self.localClosed {
+		self.Close()
+	}
 }

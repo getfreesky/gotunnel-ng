@@ -42,6 +42,9 @@ func NewSessionManager(delivery *Delivery) *SessionManager {
 				return
 			}
 			manager.Sessions[id] = session
+			session.OnClose(func() {
+				delete(manager.Sessions, id)
+			})
 			manager.Signal("newSession", session)
 		case DATA:
 			data, err := ioutil.ReadAll(reader)
@@ -49,7 +52,16 @@ func NewSessionManager(delivery *Delivery) *SessionManager {
 				return
 			}
 			session := manager.Sessions[id]
-			session.HandleData(data)
+			if session == nil {
+				return
+			}
+			session.Signal("data", data)
+		case CLOSE:
+			session := manager.Sessions[id]
+			if session == nil {
+				return
+			}
+			session.Signal("close")
 		default:
 			log.Fatal("unknown packet type %d", packetType)
 		}
