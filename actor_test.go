@@ -43,4 +43,10 @@ func TestActorSignal(t *testing.T) {
 	if !succ {
 		t.Fail()
 	}
+	s.OnSignal("bar", func(s string) {
+		if s != "bar" {
+			t.Fail()
+		}
+	})
+	s.Signal("bar", "bar")
 }

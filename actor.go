@@ -8,11 +8,17 @@ type Actor struct {
 	callbacks      []callbackFunc
 	recvChan       chan *recvInfo
 	stopRecvChan   chan *recvInfo
-	signalChan     chan string
-	signalHandlers map[string]func()
+	signalChan     chan signalInfo
+	signalHandlers map[string]signalHandler
 }
 
 type callbackFunc func(reflect.Value)
+type signalHandler interface{}
+
+type signalInfo struct {
+	signal string
+	v      []interface{}
+}
 
 type recvInfo struct {
 	c interface{}
@@ -24,8 +30,8 @@ func NewActor() *Actor {
 		Closer:         new(Closer),
 		recvChan:       make(chan *recvInfo, 128), //TODO make it unbuffered
 		stopRecvChan:   make(chan *recvInfo, 128),
-		signalChan:     make(chan string, 1024),
-		signalHandlers: make(map[string]func()),
+		signalChan:     make(chan signalInfo, 1024),
+		signalHandlers: make(map[string]signalHandler),
 	}
 	actor.OnClose(func() {
 		actor.Signal("__next")
@@ -66,9 +72,13 @@ func NewActor() *Actor {
 			actor.callbacks = append(actor.callbacks[:n], actor.callbacks[n+1:]...)
 		},
 		func(v reflect.Value) { // signal
-			signal := v.Interface().(string)
-			if handler, ok := actor.signalHandlers[signal]; ok {
-				handler()
+			info := v.Interface().(signalInfo)
+			if handler, ok := actor.signalHandlers[info.signal]; ok {
+				var args []reflect.Value
+				for _, arg := range info.v {
+					args = append(args, reflect.ValueOf(arg))
+				}
+				reflect.ValueOf(handler).Call(args)
 			}
 		},
 	}
@@ -103,10 +113,13 @@ func (self *Actor) StopRecv(c interface{}) {
 	self.Signal("__next")
 }
 
-func (self *Actor) OnSignal(signal string, f func()) {
+func (self *Actor) OnSignal(signal string, f signalHandler) {
 	self.signalHandlers[signal] = f
 }
 
-func (self *Actor) Signal(signal string) {
-	self.signalChan <- signal
+func (self *Actor) Signal(signal string, v ...interface{}) {
+	self.signalChan <- signalInfo{
+		signal: signal,
+		v:      v,
+	}
 }
