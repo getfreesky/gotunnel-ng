@@ -34,9 +34,9 @@ func NewOutgoingSession(delivery *Delivery, hostPort string, conn net.Conn) (*Se
 		connReady:      make(chan bool),
 		connWriteQueue: make(chan []byte),
 	}
+	session.Recv(session.connWriteQueue, session.writeConn)
 	session.SendConnect()
 	go session.startConnReader()
-	session.Recv(session.connWriteQueue, session.writeConn)
 	close(session.connReady)
 	return session, nil
 }
@@ -50,6 +50,7 @@ func NewIncomingSession(id int64, delivery *Delivery, hostPort string) (*Session
 		connReady: make(chan bool),
 		connWriteQueue: make(chan []byte),
 	}
+	session.Recv(session.connWriteQueue, session.writeConn)
 	go func() {
 		conn, err := net.DialTimeout("tcp", hostPort, time.Second*5)
 		if err != nil {
@@ -59,7 +60,6 @@ func NewIncomingSession(id int64, delivery *Delivery, hostPort string) (*Session
 		}
 		session.conn = conn
 		go session.startConnReader()
-		session.Recv(session.connWriteQueue, session.writeConn)
 		close(session.connReady)
 	}()
 	return session, nil
