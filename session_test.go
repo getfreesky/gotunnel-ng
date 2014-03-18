@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"sync"
 	"testing"
 
 	"code.google.com/p/go.net/proxy"
@@ -102,4 +103,35 @@ func TestSession(t *testing.T) {
 	if !bytes.Equal(data, response) {
 		t.Fatal("data not match")
 	}
+
+	// stress test
+	n = 1024
+	wg := new(sync.WaitGroup)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			conn, err := proxy.Dial("tcp", "localhost:37000")
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := bytes.Repeat([]byte("hello"), 2048)
+			binary.Write(conn, binary.BigEndian, uint16(len(data)))
+			conn.Write(data)
+			var length uint16
+			err = binary.Read(conn, binary.BigEndian, &length)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := make([]byte, length)
+			n, _ := io.ReadFull(conn, response)
+			if n != int(length) {
+				t.Fatal("data incomplete")
+			}
+			if !bytes.Equal(data, response) {
+				t.Fatal("data not match")
+			}
+		}()
+	}
+	wg.Wait()
 }
