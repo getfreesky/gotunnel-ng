@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"math/rand"
 	"net"
+	"reflect"
 	"time"
 )
 
@@ -61,6 +62,9 @@ func NewIncomingSession(id int64, delivery *Delivery, hostPort string) (*Session
 			if session.remoteClosed {
 				session.Close()
 			}
+			session.Recv(time.After(time.Minute*3), func(v reflect.Value) {
+				session.Close()
+			})
 			close(session.connReady)
 			return
 		}
@@ -84,6 +88,9 @@ func (self *Session) startConnReader() {
 			if self.remoteClosed {
 				self.Close()
 			}
+			self.Recv(time.After(time.Minute*3), func(v reflect.Value) {
+				self.Close()
+			})
 			break
 		}
 	}
@@ -129,4 +136,7 @@ func (self *Session) onClose() {
 	if self.localClosed {
 		self.Close()
 	}
+	self.Recv(time.After(time.Minute*3), func(v reflect.Value) {
+		self.Close()
+	})
 }
