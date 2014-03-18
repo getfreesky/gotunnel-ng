@@ -56,6 +56,11 @@ func NewIncomingSession(id int64, delivery *Delivery, hostPort string) (*Session
 		conn, err := net.DialTimeout("tcp", hostPort, time.Second*5)
 		if err != nil {
 			session.Signal("dialError") //TODO
+			session.SendClose()
+			session.localClosed = true
+			if session.remoteClosed {
+				session.Close()
+			}
 			close(session.connReady)
 			return
 		}
