@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net"
 	"reflect"
+	"time"
 )
 
 type Delivery struct {
@@ -20,7 +21,7 @@ type Delivery struct {
 }
 
 func NewOutgoingDelivery(hostPort string) (*Delivery, error) {
-	conn, err := net.Dial("tcp", hostPort)
+	conn, err := net.DialTimeout("tcp", hostPort, time.Second*5)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +59,7 @@ func NewDelivery(hostPort string, conn net.Conn, source int64) (*Delivery, error
 
 func (self *Delivery) onConnBroken() {
 	if self.hostPort != "" { // outgoing delivery
-		conn, err := net.Dial("tcp", self.hostPort)
+		conn, err := net.DialTimeout("tcp", self.hostPort, time.Second*5)
 		if err != nil {
 			self.Signal("connBroken")
 			return
