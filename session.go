@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"math/rand"
 	"net"
+	"reflect"
+	"time"
 )
 
 const (
@@ -14,24 +16,27 @@ const (
 
 type Session struct {
 	*Actor
-	id        int64
-	delivery  *Delivery
-	hostPort  string
-	conn      net.Conn
-	connReady chan bool
+	id             int64
+	delivery       *Delivery
+	hostPort       string
+	conn           net.Conn
+	connReady      chan bool
+	connWriteQueue chan []byte
 }
 
 func NewOutgoingSession(delivery *Delivery, hostPort string, conn net.Conn) (*Session, error) {
 	session := &Session{
-		Actor:     NewActor(),
-		id:        rand.Int63(),
-		delivery:  delivery,
-		hostPort:  hostPort,
-		conn:      conn,
-		connReady: make(chan bool),
+		Actor:          NewActor(),
+		id:             rand.Int63(),
+		delivery:       delivery,
+		hostPort:       hostPort,
+		conn:           conn,
+		connReady:      make(chan bool),
+		connWriteQueue: make(chan []byte),
 	}
 	session.SendConnect()
 	go session.startConnReader()
+	session.Recv(session.connWriteQueue, session.writeConn)
 	close(session.connReady)
 	return session, nil
 }
@@ -43,15 +48,18 @@ func NewIncomingSession(id int64, delivery *Delivery, hostPort string) (*Session
 		delivery:  delivery,
 		hostPort:  hostPort,
 		connReady: make(chan bool),
+		connWriteQueue: make(chan []byte),
 	}
 	go func() {
-		conn, err := net.Dial("tcp", hostPort)
+		conn, err := net.DialTimeout("tcp", hostPort, time.Second*5)
 		if err != nil {
 			session.Signal("dialError")
+			close(session.connReady)
 			return
 		}
 		session.conn = conn
 		go session.startConnReader()
+		session.Recv(session.connWriteQueue, session.writeConn)
 		close(session.connReady)
 	}()
 	return session, nil
@@ -91,6 +99,14 @@ func (self *Session) SendData(data []byte) {
 }
 
 func (self *Session) HandleData(data []byte) {
+	self.connWriteQueue <- data
+}
+
+func (self *Session) writeConn(v reflect.Value) {
 	<-self.connReady
+	if self.conn == nil {
+		return
+	}
+	data := v.Interface().([]byte)
 	self.conn.Write(data)
 }
