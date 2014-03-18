@@ -112,6 +112,7 @@ func (self *Delivery) startConnReader() {
 			break
 		}
 		self.IncomingPacket <- data
+		self.Signal("incoming", data)
 	}
 }
 

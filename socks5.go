@@ -35,8 +35,7 @@ const (
 )
 
 type SocksServer struct {
-	*Closer
-	NewClient chan SocksClientInfo
+	*Actor
 }
 
 type SocksClientInfo struct {
@@ -46,8 +45,7 @@ type SocksClientInfo struct {
 
 func NewSocksServer(listenAddr string) (*SocksServer, error) {
 	server := &SocksServer{
-		Closer:    new(Closer),
-		NewClient: make(chan SocksClientInfo),
+		Actor: NewActor(),
 	}
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -179,10 +177,7 @@ func (self *SocksServer) handshake(conn net.Conn) {
 	}
 	writeAck(conn, REP_SUCCEED)
 
-	self.NewClient <- SocksClientInfo{
-		Conn:     conn,
-		HostPort: hostPort,
-	}
+	self.Signal("client", conn, hostPort)
 }
 
 func writeAck(conn net.Conn, reply byte) {
