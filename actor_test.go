@@ -27,3 +27,20 @@ func TestActor(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestActorSignal(t *testing.T) {
+	s := &testActor{
+		Actor: NewActor(),
+	}
+	succ := false
+	done := make(chan bool)
+	s.OnSignal("foo", func() {
+		succ = true
+		close(done)
+	})
+	s.Signal("foo")
+	<-done
+	if !succ {
+		t.Fail()
+	}
+}
