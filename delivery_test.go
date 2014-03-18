@@ -2,48 +2,22 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
-	"net"
 	"testing"
 )
 
 func TestDelivery(t *testing.T) {
 	done := make(chan bool)
-	succ := false
 	var serverDelivery *Delivery
 
-	// server TODO make it DeliverListener
-	ln, err := net.Listen("tcp", "localhost:35500")
+	// server
+	listener, err := NewDeliveryListener("localhost:35500")
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() {
-		deliveries := make(map[int64]*Delivery)
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				t.Fatal(err)
-			}
-			var source int64
-			err = binary.Read(conn, binary.BigEndian, &source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if delivery, ok := deliveries[source]; ok { // existing delivery
-				delivery.conn = conn
-				close(delivery.connReady)
-				continue
-			}
-			delivery, err := NewIncomingDelivery(conn, source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			serverDelivery = delivery
-			deliveries[source] = delivery
-			done <- true
-			succ = true
-		}
-	}()
+	listener.OnSignal("notify:delivery", func(delivery *Delivery) {
+		serverDelivery = delivery
+		done <- true
+	})
 
 	// client
 	delivery, err := NewOutgoingDelivery("localhost:35500")
@@ -51,9 +25,6 @@ func TestDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-done // wait for server delivery
-	if !succ {
-		t.Fatal("delivery establish fail")
-	}
 
 	// connection broken test
 	delivery.OnSignal("notify:reconnected", func() {
