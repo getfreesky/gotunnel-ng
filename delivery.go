@@ -133,6 +133,7 @@ func (self *Delivery) startFlowControl() {
 		if self.IsClosed {
 			break
 		}
+		//TODO cut by unack flow
 		for i := 0; i < n; i++ {
 			select {
 			case self.FlowControl <- bufferSize:

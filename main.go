@@ -15,12 +15,12 @@ import (
 func init() {
 	rand.Seed(time.Now().UnixNano())
 
-	go http.ListenAndServe("localhost:55555", nil)
+	go http.ListenAndServe("0.0.0.0:55555", nil)
 }
 
 func main() {
 	// server
-	listener, err := NewDeliveryListener("localhost:35000")
+	listener, err := NewDeliveryListener("0.0.0.0:35000")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -30,12 +30,12 @@ func main() {
 		serverSessionManagers = append(serverSessionManagers, m)
 	})
 	// local
-	delivery, err := NewOutgoingDelivery("localhost:35000")
+	delivery, err := NewOutgoingDelivery("0.0.0.0:35000")
 	if err != nil {
 		log.Fatal(err)
 	}
 	localSessionManager := NewSessionManager(delivery)
-	socksServer, err := NewSocksServer("localhost:31080")
+	socksServer, err := NewSocksServer("0.0.0.0:31080")
 	if err != nil {
 		log.Fatal(err)
 	}
