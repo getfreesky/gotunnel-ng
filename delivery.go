@@ -124,20 +124,35 @@ func (self *Delivery) startConnReader() {
 }
 
 func (self *Delivery) startFlowControl() {
-	bufferSize := 2048
+	size := 2048
 	interval := time.Millisecond * 200
 	flowPerSecond := 1024 * 1024
-	n := (flowPerSecond / bufferSize) / int(time.Second/interval)
-	self.FlowControl = make(chan int, n)
-	for _ = range time.NewTicker(interval).C {
-		if self.IsClosed {
-			break
-		}
-		//TODO cut by unack flow
-		for i := 0; i < n; i++ {
+	n := (flowPerSecond / size) / int(time.Second/interval)
+	self.FlowControl = make(chan int)
+	ticker := time.NewTicker(interval)
+	var buf []int
+	for {
+		if len(buf) > 0 {
 			select {
-			case self.FlowControl <- bufferSize:
-			default:
+			case <-ticker.C:
+				if self.IsClosed {
+					return
+				}
+				for i := 0; i < n-len(buf); i++ {
+					buf = append(buf, size)
+				}
+			case self.FlowControl <- buf[len(buf)-1]:
+				buf = buf[:len(buf)-1]
+			}
+		} else {
+			select {
+			case <-ticker.C:
+				if self.IsClosed {
+					return
+				}
+				for i := 0; i < n; i++ {
+					buf = append(buf, size)
+				}
 			}
 		}
 	}
