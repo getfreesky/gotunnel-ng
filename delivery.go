@@ -19,6 +19,7 @@ type Delivery struct {
 	SendQueue      chan []byte
 	reconnectTimes int
 	FlowControl    chan int
+	Load           float64
 }
 
 func NewOutgoingDelivery(hostPort string) (*Delivery, error) {
@@ -141,6 +142,7 @@ func (self *Delivery) startFlowControl() {
 				for i := 0; i < n-len(buf); i++ {
 					buf = append(buf, size)
 				}
+				self.Load = float64(n-len(buf)) / float64(n)
 			case self.FlowControl <- buf[len(buf)-1]:
 				buf = buf[:len(buf)-1]
 			}
@@ -153,6 +155,7 @@ func (self *Delivery) startFlowControl() {
 				for i := 0; i < n; i++ {
 					buf = append(buf, size)
 				}
+				self.Load = 1
 			}
 		}
 	}
