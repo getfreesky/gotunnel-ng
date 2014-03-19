@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	_ "net/http/pprof"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 )
@@ -95,8 +95,13 @@ func main() {
 				stats[s]++
 			}
 		}
-		for trace, count := range stats {
-			p("%d\n", count)
+		var traces []string
+		for trace, _ := range stats {
+			traces = append(traces, trace)
+		}
+		sort.Strings(traces)
+		for _, trace := range traces {
+			p("%d\n", stats[trace])
 			p("%s\n", trace)
 		}
 	})

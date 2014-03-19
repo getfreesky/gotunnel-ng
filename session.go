@@ -77,7 +77,7 @@ func NewIncomingSession(id int64, delivery *Delivery, hostPort string) (*Session
 
 func (self *Session) startConnReader() {
 	for {
-		buf := make([]byte, 1024)
+		buf := make([]byte, <-self.delivery.FlowControl)
 		n, err := self.conn.Read(buf)
 		if n > 0 {
 			self.SendData(buf[:n])

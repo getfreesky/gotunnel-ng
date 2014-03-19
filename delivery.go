@@ -18,6 +18,7 @@ type Delivery struct {
 	connReady      chan bool
 	SendQueue      chan []byte
 	reconnectTimes int
+	FlowControl    chan int
 }
 
 func NewOutgoingDelivery(hostPort string) (*Delivery, error) {
@@ -53,6 +54,7 @@ func NewDelivery(hostPort string, conn net.Conn, source int64) (*Delivery, error
 	})
 	delivery.OnSignal("connBroken", delivery.onConnBroken)
 	go delivery.startConnReader()
+	go delivery.startFlowControl()
 	delivery.Recv(delivery.SendQueue, delivery.send)
 	return delivery, nil
 }
@@ -92,6 +94,10 @@ func (self *Delivery) send(v reflect.Value) {
 	}
 }
 
+func (self *Delivery) Send(data []byte) {
+	self.SendQueue <- data
+}
+
 func (self *Delivery) startConnReader() {
 	var err error
 	var length uint16
@@ -117,6 +123,21 @@ func (self *Delivery) startConnReader() {
 	}
 }
 
-func (self *Delivery) Send(data []byte) {
-	self.SendQueue <- data
+func (self *Delivery) startFlowControl() {
+	bufferSize := 2048
+	interval := time.Millisecond * 200
+	flowPerSecond := 1024 * 1024
+	n := (flowPerSecond / bufferSize) / int(time.Second/interval)
+	self.FlowControl = make(chan int, n)
+	for _ = range time.NewTicker(interval).C {
+		if self.IsClosed {
+			break
+		}
+		for i := 0; i < n; i++ {
+			select {
+			case self.FlowControl <- bufferSize:
+			default:
+			}
+		}
+	}
 }
