@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
+	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -19,36 +21,49 @@ func init() {
 }
 
 func main() {
-	// server
-	listener, err := NewDeliveryListener("0.0.0.0:35000")
-	if err != nil {
-		log.Fatal(err)
+	// arguments
+	if len(os.Args) < 2 {
+		fmt.Printf("usage: %s [server-listen_address] [local-server_address-socks_address]\n", os.Args[0])
+		return
 	}
 	var serverSessionManagers []*SessionManager
-	listener.OnSignal("notify:delivery", func(delivery *Delivery) {
-		m := NewSessionManager(delivery)
-		serverSessionManagers = append(serverSessionManagers, m)
-	})
-	// local
-	delivery, err := NewOutgoingDelivery("0.0.0.0:35000")
-	if err != nil {
-		log.Fatal(err)
-	}
-	localSessionManager := NewSessionManager(delivery)
-	socksServer, err := NewSocksServer("0.0.0.0:31080")
-	if err != nil {
-		log.Fatal(err)
-	}
-	socksServer.OnSignal("client", func(conn net.Conn, hostPort string) {
-		session, err := NewOutgoingSession(delivery, hostPort, conn)
-		if err != nil {
-			log.Fatal(err)
+	var localSessionManager *SessionManager
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(arg, "server") { // start server
+			parts := strings.Split(arg, "-")
+			listener, err := NewDeliveryListener(parts[1])
+			if err != nil {
+				log.Fatal(err)
+			}
+			listener.OnSignal("notify:delivery", func(delivery *Delivery) {
+				m := NewSessionManager(delivery)
+				serverSessionManagers = append(serverSessionManagers, m)
+			})
+		} else if strings.HasPrefix(arg, "local") { // start local
+			parts := strings.Split(arg, "-")
+			delivery, err := NewOutgoingDelivery(parts[1])
+			if err != nil {
+				log.Fatal(err)
+			}
+			localSessionManager = NewSessionManager(delivery)
+			socksServer, err := NewSocksServer(parts[2])
+			if err != nil {
+				log.Fatal(err)
+			}
+			socksServer.OnSignal("client", func(conn net.Conn, hostPort string) {
+				session, err := NewOutgoingSession(delivery, hostPort, conn)
+				if err != nil {
+					log.Fatal(err)
+				}
+				localSessionManager.Sessions[session.id] = session
+				session.OnClose(func() {
+					delete(localSessionManager.Sessions, session.id)
+				})
+			})
+		} else {
+			log.Fatalf("unknown argument %s", arg)
 		}
-		localSessionManager.Sessions[session.id] = session
-		session.OnClose(func() {
-			delete(localSessionManager.Sessions, session.id)
-		})
-	})
+	}
 
 	// web status
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
@@ -61,11 +76,13 @@ func main() {
 		p("%d goroutines, %fm in use\n", runtime.NumGoroutine(), float64(memStats.Alloc)/1000000)
 		p("\n")
 		// local sessions
-		p("%d local sessions\n", len(localSessionManager.Sessions))
-		for _, session := range localSessionManager.Sessions {
-			p("%v %v %s\n", session.localClosed, session.remoteClosed, session.hostPort)
+		if localSessionManager != nil {
+			p("%d local sessions\n", len(localSessionManager.Sessions))
+			for _, session := range localSessionManager.Sessions {
+				p("%v %v %s\n", session.localClosed, session.remoteClosed, session.hostPort)
+			}
+			p("\n")
 		}
-		p("\n")
 		// server sessions
 		for _, manager := range serverSessionManagers {
 			p("%d server sessions\n", len(manager.Sessions))
