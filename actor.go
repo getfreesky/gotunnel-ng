@@ -3,7 +3,7 @@ package main
 import "reflect"
 
 type Actor struct {
-	*Closer
+	IsClosed       bool
 	cases          []reflect.SelectCase
 	callbacks      []callbackFunc
 	signalChan     chan signalInfo
@@ -19,13 +19,9 @@ type signalInfo struct {
 
 func NewActor() *Actor {
 	actor := &Actor{
-		Closer:         new(Closer),
 		signalChan:     make(chan signalInfo, 1024),
 		signalHandlers: make(map[string][]interface{}),
 	}
-	actor.OnClose(func() {
-		actor.Signal("__close")
-	})
 	actor.cases = []reflect.SelectCase{
 		{ // signal
 			Dir:  reflect.SelectRecv,
@@ -64,6 +60,9 @@ func NewActor() *Actor {
 		actor.cases = append(actor.cases[:n], actor.cases[n+1:]...)
 		actor.callbacks = append(actor.callbacks[:n], actor.callbacks[n+1:]...)
 	})
+	actor.OnSignal("__close", func() {
+		actor.IsClosed = true
+	})
 
 	// loop
 	go func() {
@@ -98,4 +97,12 @@ func (self *Actor) Recv(c interface{}, f callbackFunc) {
 
 func (self *Actor) StopRecv(c interface{}) {
 	self.Signal("__stop_recv", c)
+}
+
+func (self *Actor) Close() {
+	self.Signal("__close")
+}
+
+func (self *Actor) OnClose(f func()) {
+	self.OnSignal("__close", f)
 }
