@@ -24,7 +24,7 @@ func NewActor() *Actor {
 		signalHandlers: make(map[string][]interface{}),
 	}
 	actor.OnClose(func() {
-		actor.Signal("__next")
+		actor.Signal("__close")
 	})
 	actor.cases = []reflect.SelectCase{
 		{ // signal
@@ -46,14 +46,14 @@ func NewActor() *Actor {
 			}
 		},
 	}
-	actor.OnSignal("recv", func(c interface{}, f callbackFunc) {
+	actor.OnSignal("__recv", func(c interface{}, f callbackFunc) {
 		actor.cases = append(actor.cases, reflect.SelectCase{
 			Dir:  reflect.SelectRecv,
 			Chan: reflect.ValueOf(c),
 		})
 		actor.callbacks = append(actor.callbacks, f)
 	})
-	actor.OnSignal("stop-recv", func(c interface{}) {
+	actor.OnSignal("__stop_recv", func(c interface{}) {
 		var n int
 		for i, c := range actor.cases {
 			if reflect.DeepEqual(c.Chan.Interface(), c) {
@@ -93,9 +93,9 @@ func (self *Actor) Signal(signal string, v ...interface{}) {
 }
 
 func (self *Actor) Recv(c interface{}, f callbackFunc) {
-	self.Signal("recv", c, f)
+	self.Signal("__recv", c, f)
 }
 
 func (self *Actor) StopRecv(c interface{}) {
-	self.Signal("stop-recv", c)
+	self.Signal("__stop_recv", c)
 }
