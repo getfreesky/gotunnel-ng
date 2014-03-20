@@ -7,7 +7,7 @@ type Actor struct {
 	cases          []reflect.SelectCase
 	callbacks      []callbackFunc
 	signalChan     chan signalInfo
-	signalHandlers map[string][]interface{}
+	signalHandlers map[string][]reflect.Value
 }
 
 type callbackFunc func(reflect.Value)
@@ -20,68 +20,73 @@ type signalInfo struct {
 func NewActor() *Actor {
 	actor := &Actor{
 		signalChan:     make(chan signalInfo, 1024),
-		signalHandlers: make(map[string][]interface{}),
+		signalHandlers: make(map[string][]reflect.Value),
 	}
 	actor.cases = []reflect.SelectCase{
-		{ // signal
+		{
 			Dir:  reflect.SelectRecv,
 			Chan: reflect.ValueOf(actor.signalChan),
 		},
 	}
-	actor.callbacks = []callbackFunc{
-		func(v reflect.Value) { // signal
-			info := v.Interface().(signalInfo)
-			if handlers, ok := actor.signalHandlers[info.signal]; ok {
-				var args []reflect.Value
-				for _, arg := range info.v {
-					args = append(args, reflect.ValueOf(arg))
-				}
-				for _, handler := range handlers {
-					reflect.ValueOf(handler).Call(args)
-				}
-			}
-		},
-	}
-	actor.OnSignal("__recv", func(c interface{}, f callbackFunc) {
-		actor.cases = append(actor.cases, reflect.SelectCase{
-			Dir:  reflect.SelectRecv,
-			Chan: reflect.ValueOf(c),
-		})
-		actor.callbacks = append(actor.callbacks, f)
-	})
-	actor.OnSignal("__stop_recv", func(c interface{}) {
-		var n int
-		for i, c := range actor.cases {
-			if reflect.DeepEqual(c.Chan.Interface(), c) {
-				n = i
-				break
-			}
-		}
-		actor.cases = append(actor.cases[:n], actor.cases[n+1:]...)
-		actor.callbacks = append(actor.callbacks[:n], actor.callbacks[n+1:]...)
-	})
-	actor.OnSignal("__close", func() {
-		actor.IsClosed = true
-	})
-
-	// loop
-	go func() {
-		for {
-			n, v, ok := reflect.Select(actor.cases)
-			if ok {
-				actor.callbacks[n](v)
-			}
-			if actor.IsClosed {
-				break
-			}
-		}
-	}()
-
+	actor.callbacks = []callbackFunc{actor.onSignal}
+	actor.OnSignal("__recv", actor.recv)
+	actor.OnSignal("__stop_recv", actor.stopRecv)
+	actor.OnSignal("__close", actor.onClose)
+	go actor.start()
 	return actor
 }
 
+func (self *Actor) start() {
+	for {
+		n, v, ok := reflect.Select(self.cases)
+		if ok {
+			self.callbacks[n](v)
+		}
+		if self.IsClosed {
+			break
+		}
+	}
+}
+
+func (self *Actor) onSignal(v reflect.Value) {
+	info := v.Interface().(signalInfo)
+	if handlers, ok := self.signalHandlers[info.signal]; ok {
+		var args []reflect.Value
+		for _, arg := range info.v {
+			args = append(args, reflect.ValueOf(arg))
+		}
+		for _, handler := range handlers {
+			handler.Call(args)
+		}
+	}
+}
+
+func (self *Actor) recv(c interface{}, f callbackFunc) {
+	self.cases = append(self.cases, reflect.SelectCase{
+		Dir:  reflect.SelectRecv,
+		Chan: reflect.ValueOf(c),
+	})
+	self.callbacks = append(self.callbacks, f)
+}
+
+func (self *Actor) stopRecv(c interface{}) {
+	var n int
+	for i, c := range self.cases {
+		if reflect.DeepEqual(c.Chan.Interface(), c) {
+			n = i
+			break
+		}
+	}
+	self.cases = append(self.cases[:n], self.cases[n+1:]...)
+	self.callbacks = append(self.callbacks[:n], self.callbacks[n+1:]...)
+}
+
+func (self *Actor) onClose() {
+	self.IsClosed = true
+}
+
 func (self *Actor) OnSignal(signal string, f interface{}) {
-	self.signalHandlers[signal] = append(self.signalHandlers[signal], f)
+	self.signalHandlers[signal] = append(self.signalHandlers[signal], reflect.ValueOf(f))
 }
 
 func (self *Actor) Signal(signal string, v ...interface{}) {
