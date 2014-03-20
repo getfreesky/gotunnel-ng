@@ -54,7 +54,7 @@ func NewIncomingSession(id int64, delivery *Delivery, hostPort string) (*Session
 	session.OnSignal("data", session.onData)
 	session.OnSignal("close", session.onClose)
 	go func() {
-		conn, err := net.DialTimeout("tcp", hostPort, time.Second*5)
+		conn, err := net.DialTimeout("tcp", hostPort, time.Second*30)
 		if err != nil {
 			session.Signal("dialError") //TODO
 			session.SendClose()
