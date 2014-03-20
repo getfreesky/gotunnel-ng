@@ -50,3 +50,34 @@ func TestActorSignal(t *testing.T) {
 	})
 	s.Signal("bar", "bar")
 }
+
+func BenchmarkActorSignal(b *testing.B) {
+	s := &testActor{
+		Actor: NewActor(),
+	}
+	done := make(chan bool)
+	s.OnSignal("foo", func() {
+		done <- true
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		s.Signal("foo")
+		<-done
+	}
+}
+
+func BenchmarkActorRecv(b *testing.B) {
+	s := &testActor{
+		Actor: NewActor(),
+	}
+	done := make(chan bool)
+	c := make(chan bool, 1)
+	s.Recv(c, func(v reflect.Value) {
+		done <- true
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c <- true
+		<-done
+	}
+}
