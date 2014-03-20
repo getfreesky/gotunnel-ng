@@ -125,9 +125,9 @@ func (self *Delivery) startConnReader() {
 }
 
 func (self *Delivery) startFlowControl() {
-	size := 2048
-	interval := time.Millisecond * 200
-	flowPerSecond := 1024 * 1024
+	size := 1500
+	interval := time.Millisecond * 100
+	flowPerSecond := 1024 * 1024 * 2
 	n := (flowPerSecond / size) / int(time.Second/interval)
 	self.FlowControl = make(chan int)
 	ticker := time.NewTicker(interval)
