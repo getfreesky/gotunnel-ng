@@ -37,7 +37,7 @@ func main() {
 			}
 			listener.OnSignal("notify:delivery", func(delivery *Delivery) {
 				serverDeliveries[delivery.Source] = delivery
-				delivery.OnClose(func() {
+				delivery.CloseCallbacks = append(delivery.CloseCallbacks, func() {
 					delete(serverDeliveries, delivery.Source)
 				})
 				m := NewSessionManager(delivery)

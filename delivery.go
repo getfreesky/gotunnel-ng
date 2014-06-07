@@ -3,14 +3,15 @@ package main
 import (
 	"encoding/binary"
 	"io"
+	"log"
 	"math/rand"
 	"net"
-	"reflect"
 	"time"
 )
 
 type Delivery struct {
-	*Actor
+	Type           int
+	State          int
 	hostPort       string
 	conn           net.Conn
 	Source         int64
@@ -20,7 +21,18 @@ type Delivery struct {
 	reconnectTimes int
 	FlowControl    chan int
 	Load           float64
+	CloseCallbacks []func()
 }
+
+const (
+	INCOMING = iota
+	OUTGOING
+	NORMAL
+	BROKEN
+	CLOSED
+
+	HeartBeatInterval = time.Second * 8
+)
 
 func NewOutgoingDelivery(hostPort string) (*Delivery, error) {
 	conn, err := net.DialTimeout("tcp", hostPort, time.Second*30)
@@ -33,16 +45,17 @@ func NewOutgoingDelivery(hostPort string) (*Delivery, error) {
 		conn.Close()
 		return nil, err
 	}
-	return NewDelivery(hostPort, conn, source)
+	return NewDelivery(OUTGOING, hostPort, conn, source)
 }
 
 func NewIncomingDelivery(conn net.Conn, source int64) (*Delivery, error) {
-	return NewDelivery("", conn, source)
+	return NewDelivery(INCOMING, "", conn, source)
 }
 
-func NewDelivery(hostPort string, conn net.Conn, source int64) (*Delivery, error) {
+func NewDelivery(t int, hostPort string, conn net.Conn, source int64) (*Delivery, error) {
 	delivery := &Delivery{
-		Actor:          NewActor(),
+		Type:           t,
+		State:          NORMAL,
 		hostPort:       hostPort,
 		conn:           conn,
 		Source:         source,
@@ -50,43 +63,73 @@ func NewDelivery(hostPort string, conn net.Conn, source int64) (*Delivery, error
 		connReady:      make(chan bool),
 		SendQueue:      make(chan []byte),
 	}
-	delivery.OnClose(func() {
-		conn.Close()
-	})
-	delivery.OnSignal("connBroken", delivery.onConnBroken)
 	go delivery.startConnReader()
+	go delivery.start()
 	go delivery.startFlowControl()
-	delivery.Recv(delivery.SendQueue, delivery.send)
 	return delivery, nil
 }
 
+func (self *Delivery) start() {
+	// main loop
+	heartBeatTimer := time.NewTimer(HeartBeatInterval)
+	for {
+		switch self.State {
+		case NORMAL:
+			heartBeatTimer.Reset(HeartBeatInterval)
+			select {
+			case data := <-self.SendQueue:
+				self.send(data)
+			case <-heartBeatTimer.C: // send heartbeat
+				self.heartbeat()
+			}
+		case BROKEN:
+			self.onConnBroken()
+		}
+	}
+	// cleaning
+	self.State = CLOSED
+	self.conn.Close()
+	for _, cb := range self.CloseCallbacks {
+		cb()
+	}
+}
+
 func (self *Delivery) onConnBroken() {
-	if self.hostPort != "" { // outgoing delivery
+	if self.Type == OUTGOING {
+		print("reconnect")
 		conn, err := net.DialTimeout("tcp", self.hostPort, time.Second*30)
 		if err != nil {
-			self.Signal("connBroken")
+			self.State = BROKEN
 			return
 		}
 		err = binary.Write(conn, binary.BigEndian, self.Source)
 		if err != nil {
-			self.Signal("connBroken")
+			self.State = BROKEN
 			return
 		}
 		self.conn = conn
+		print("reconnect success")
 	} else { // incoming delivery
 		<-self.connReady
 		self.connReady = make(chan bool)
 	}
 	go self.startConnReader()
 	self.reconnectTimes++
-	self.Signal("notify:reconnected")
+	self.State = NORMAL
 }
 
-func (self *Delivery) send(v reflect.Value) {
-	data := v.Interface().([]byte)
+func (self *Delivery) heartbeat() {
+	err := binary.Write(self.conn, binary.BigEndian, uint16(0))
+	if err != nil {
+		self.State = BROKEN
+		return
+	}
+}
+
+func (self *Delivery) send(data []byte) {
 	err := binary.Write(self.conn, binary.BigEndian, uint16(len(data)))
 	if err != nil {
-		self.Signal("connBroken")
+		self.State = BROKEN
 		return
 	}
 	for i, _ := range data {
@@ -94,7 +137,7 @@ func (self *Delivery) send(v reflect.Value) {
 	}
 	n, err := self.conn.Write(data)
 	if err != nil || n != len(data) {
-		self.Signal("connBroken")
+		self.State = BROKEN
 	}
 }
 
@@ -107,26 +150,32 @@ func (self *Delivery) startConnReader() {
 	var length uint16
 	var n int
 	for {
+		err = self.conn.SetDeadline(time.Now().Add(HeartBeatInterval * 2))
+		if err != nil {
+			log.Fatal(err)
+		}
 		err = binary.Read(self.conn, binary.BigEndian, &length)
 		if err != nil {
-			if self.IsClosed { // close by Close()
+			if self.State == CLOSED {
 				break
 			} else { // conn broken
-				self.Signal("connBroken")
+				self.State = BROKEN
 				break
 			}
+		}
+		if length == 0 { // heartbeat
+			continue
 		}
 		data := make([]byte, length)
 		n, err = io.ReadFull(self.conn, data)
 		if err != nil || n != int(length) { // conn broken
-			self.Signal("connBroken")
+			self.State = BROKEN
 			break
 		}
 		for i, _ := range data {
 			data[i] ^= 0xDE
 		}
 		self.IncomingPacket <- data
-		self.Signal("incoming", data)
 	}
 }
 
@@ -142,7 +191,7 @@ func (self *Delivery) startFlowControl() {
 		if len(buf) > 0 {
 			select {
 			case <-ticker.C:
-				if self.IsClosed {
+				if self.State == CLOSED {
 					return
 				}
 				for i := 0; i < n-len(buf); i++ {
@@ -155,7 +204,7 @@ func (self *Delivery) startFlowControl() {
 		} else {
 			select {
 			case <-ticker.C:
-				if self.IsClosed {
+				if self.State == CLOSED {
 					return
 				}
 				for i := 0; i < n; i++ {
