@@ -69,10 +69,10 @@ func main() {
 		} else if strings.HasPrefix(arg, "status") { // status
 			parts := strings.Split(arg, "-")
 			go func() {
-			err := http.ListenAndServe(parts[1], nil)
-			if err != nil {
-				log.Fatal(err)
-			}
+				err := http.ListenAndServe(parts[1], nil)
+				if err != nil {
+					log.Fatal(err)
+				}
 			}()
 			// web status
 			http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {

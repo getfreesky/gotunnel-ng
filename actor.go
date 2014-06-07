@@ -86,6 +86,7 @@ func (self *Actor) onClose() {
 }
 
 func (self *Actor) OnSignal(signal string, f interface{}) {
+	//TODO not thread safe
 	self.signalHandlers[signal] = append(self.signalHandlers[signal], reflect.ValueOf(f))
 }
 

@@ -89,6 +89,9 @@ func (self *Delivery) send(v reflect.Value) {
 		self.Signal("connBroken")
 		return
 	}
+	for i, _ := range data {
+		data[i] ^= 0xDE
+	}
 	n, err := self.conn.Write(data)
 	if err != nil || n != len(data) {
 		self.Signal("connBroken")
@@ -118,6 +121,9 @@ func (self *Delivery) startConnReader() {
 		if err != nil || n != int(length) { // conn broken
 			self.Signal("connBroken")
 			break
+		}
+		for i, _ := range data {
+			data[i] ^= 0xDE
 		}
 		self.IncomingPacket <- data
 		self.Signal("incoming", data)
